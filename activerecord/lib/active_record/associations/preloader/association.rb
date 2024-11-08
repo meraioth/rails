@@ -101,7 +101,7 @@ module ActiveRecord
 
         attr_reader :klass
 
-        def initialize(klass, owners, reflection, preload_scope, reflection_scope, associate_by_default)
+        def initialize(klass, owners, reflection, preload_scope, reflection_scope, associate_by_default, projections=nil)
           @klass         = klass
           @owners        = owners.uniq(&:__id__)
           @reflection    = reflection
@@ -110,6 +110,7 @@ module ActiveRecord
           @associate     = associate_by_default || !preload_scope || preload_scope.empty_scope?
           @model         = owners.first && owners.first.class
           @run = false
+          @projections = projections
         end
 
         def table_name
@@ -182,7 +183,12 @@ module ActiveRecord
         end
 
         def scope
-          @scope ||= build_scope
+          if @projections.present?
+            columns = [:id, association_key_name.to_sym, *@projections].uniq
+            @scope ||= build_scope.select(*columns)
+          else
+            @scope ||= build_scope
+          end
         end
 
         def set_inverse(record)

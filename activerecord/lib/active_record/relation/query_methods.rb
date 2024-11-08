@@ -430,6 +430,41 @@ module ActiveRecord
       self
     end
 
+    # Support SQL select over preloaded relations
+    #
+    # The argument has to be a hash where values are arrays.
+    # Supports nested preloads, FK of nested preload should be added manually
+    #
+    # Model has FK from SomeModel
+    # SomeModel has FK from OtherModel
+    #
+    #   models = Model.preload(some_model: :another_model)
+    #        .select_preload(some_model: [:attr1, :other_model_id, other_model: [:foo, :bar]])
+    #   models.each do |m|
+    #     m.some_model.another_model.attrX
+    #   end
+    #
+    # This executes the following SQL queries
+    # SELECT models.* from models
+    # SELECT some_model.id, some_model.other_model_id, some_model.attr1 from some_model where some_model.id in (?)
+    # SELECT other_model.id, other_model.foo, another_model.bar from other_model where other_model.id in (?)
+    #
+    # Accessing attributes of an object that do not have fields retrieved by a select
+    # except +id+ will throw ActiveModel::MissingAttributeError:
+    #
+    #   Model.select(:field).first.other_field
+    #   # => ActiveModel::MissingAttributeError: missing attribute: other_field
+    def select_preload(**args)
+      raise ArgumentError,  "The method .select_preload() must contain arguments." if args.blank?
+      args.transform_values!{|v| Array.wrap(v)}
+      spawn.select_preload!(args)
+    end
+
+    def select_preload!(args)
+      self.select_preload_values = select_preload_values.merge!(args)
+      self
+    end
+
     # Add a Common Table Expression (CTE) that you can then reference within another SELECT statement.
     #
     # Note: CTE's are only supported in MySQL for versions 8.0 and above. You will not be able to

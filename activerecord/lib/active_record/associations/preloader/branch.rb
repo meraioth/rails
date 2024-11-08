@@ -8,7 +8,7 @@ module ActiveRecord
         attr_reader :scope, :associate_by_default
         attr_writer :preloaded_records
 
-        def initialize(association:, children:, parent:, associate_by_default:, scope:)
+        def initialize(association:, children:, parent:, associate_by_default:, scope:, projections: nil)
           @association = if association
             begin
               @association = association.to_sym
@@ -20,6 +20,7 @@ module ActiveRecord
           @scope = scope
           @associate_by_default = associate_by_default
 
+          @projections = projections
           @children = build_children(children)
           @loaders = nil
         end
@@ -77,6 +78,24 @@ module ActiveRecord
           loaders.flat_map(&:runnable_loaders).reject(&:run?)
         end
 
+        def projections_for_child(parent)
+          return {} if @projections.nil?
+          if @projections.is_a?(Hash)
+            @projections.fetch(parent, {})
+          else
+            @projections.find{|e| e.is_a?(Hash)}&.fetch(parent, {})
+          end
+        end
+
+        def projections_for_association(reflection_name)
+          return [] if @projections.nil?
+          if @projections.is_a?(Hash)
+            @projections.fetch(reflection_name, []).reject{|e| e.is_a?(Hash)}
+          else
+            @projections.reject{|e| e.is_a?(Hash)}
+          end
+        end
+
         def grouped_records
           h = {}
           polymorphic_parent = !root? && parent.polymorphic?
@@ -101,7 +120,7 @@ module ActiveRecord
 
             [klass, reflection_scope]
           end.map do |(rhs_klass, reflection_scope), rs|
-            preloader_for(reflection).new(rhs_klass, rs, reflection, scope, reflection_scope, associate_by_default)
+            preloader_for(reflection).new(rhs_klass, rs, reflection, scope, reflection_scope, associate_by_default, projections_for_association(reflection.name))
           end
         end
 
@@ -124,15 +143,17 @@ module ActiveRecord
 
         private
           def build_children(children)
-            Array.wrap(children).flat_map { |association|
-              Array(association).flat_map { |parent, child|
+            Array.wrap(children).flat_map { |association| # rubocop:disable Style/BlockDelimiters
+
+              Array(association).flat_map { |parent, child| # rubocop:disable Style/BlockDelimiters
                 Branch.new(
                   parent: self,
                   association: parent,
                   children: child,
                   associate_by_default: associate_by_default,
-                  scope: scope
-                )
+                  scope: scope,
+                  projections: projections_for_child(parent),
+                  )
               }
             }
           end
